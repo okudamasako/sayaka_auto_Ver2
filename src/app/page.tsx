@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import styles from './page.module.css'
 
-const PLATFORMS = ['X (Twitter)', 'Instagram', 'LinkedIn', 'Facebook', 'TikTok', 'Threads']
-const TONES = ['カジュアル', 'ビジネス', 'フレンドリー', 'プロフェッショナル', 'ユーモラス', 'インスピレーション']
+const PLATFORMS = ['Threads', 'Instagram', 'X (Twitter)']
+const TONES = ['Sayaka Angel (やさしい)', 'カジュアル', 'ビジネス']
+const TIMESLOTS = ['7時', '12時', '18時', '21時']
 
 interface Result {
   post: string
@@ -18,41 +19,43 @@ interface Result {
     generatedAt: string
     charCount: number
   }
-  notifications: {
-    sheet: { sent: boolean; error: string }
-    slack: { sent: boolean; error: string }
-    gmail: { sent: boolean; error: string }
-  }
 }
 
 export default function Home() {
+  // 既存の入力
   const [theme, setTheme] = useState('')
-  const [platform, setPlatform] = useState('X (Twitter)')
-  const [tone, setTone] = useState('カジュアル')
-  const [charLimit, setCharLimit] = useState(140)
-  const [hashtagCount, setHashtagCount] = useState(3)
+  const [platform, setPlatform] = useState('Threads')
+  const [tone, setTone] = useState('Sayaka Angel (やさしい)')
+  
+  // 新規入力（Notion用）
+  const [productName, setProductName] = useState('')
+  const [productUrl, setProductUrl] = useState('')
+  const [timeSlot, setTimeSlot] = useState('18時')
+
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<Result | null>(null)
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
 
+  // Notion保存用ステータス
+  const [notionSaving, setNotionSaving] = useState(false)
+  const [notionSaved, setNotionSaved] = useState(false)
+
   const generate = async () => {
-    console.log("clicked")
     if (!theme.trim()) { setError('テーマを入力してください'); return }
     setLoading(true)
     setError('')
     setResult(null)
+    setNotionSaved(false)
 
     try {
-      console.log("fetch start")
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ theme, platform, tone, charLimit, hashtags: hashtagCount }),
+        body: JSON.stringify({ theme, platform, tone }),
       })
       const data = await res.json()
       if (!res.ok) {
-        console.error('API Error Response:', data)
         setError(data.error || '生成に失敗しました')
         return
       }
@@ -65,6 +68,40 @@ export default function Home() {
     }
   }
 
+  const saveToNotion = async () => {
+    if (!result) return
+    setNotionSaving(true)
+    setError('')
+
+    try {
+      const res = await fetch('/api/save-notion', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          theme: theme,
+          threadsPost: result.post,
+          hashtags: result.hashtags.join(' '),
+          reelText: result.tips, // 現在の構成ではtipsにリール文等が含まれている
+          bgm: '', // プロンプトから抽出が必要だが、一旦シンプルに保持
+          productName,
+          productUrl,
+          timeSlot
+        }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setError(data.error || 'Notion保存に失敗しました')
+        return
+      }
+      setNotionSaved(true)
+    } catch (e) {
+      console.error('Notion error:', e)
+      setError('Notion接続エラーが発生しました')
+    } finally {
+      setNotionSaving(false)
+    }
+  }
+
   const copyToClipboard = () => {
     if (!result) return
     navigator.clipboard.writeText(result.fullText)
@@ -74,33 +111,23 @@ export default function Home() {
 
   return (
     <main className={styles.main}>
-      {/* Background effects */}
       <div className={styles.bgGlow1} />
       <div className={styles.bgGlow2} />
       <div className={styles.bgGrid} />
 
       <div className={styles.container}>
-
-        {/* Header */}
         <header className={styles.header}>
-          <div className={styles.headerBadge}>AI POWERED · DEMO</div>
+          <div className={styles.headerBadge}>SAYAKA ANGEL · AI POSTER</div>
           <h1 className={styles.title}>
-            SNS投稿文<br />
-            <span className={styles.titleAccent}>ジェネレーター</span>
+            Sayaka Angel<br />
+            <span className={styles.titleAccent}>Auto Post</span>
           </h1>
           <p className={styles.subtitle}>
-            テーマを入力するだけで、AIが最適な投稿文を生成。<br />
-            Google Sheets への保存・Slack / Gmail 通知まで自動化。
+            30代女性に寄り添うSNS投稿文を生成。<br />
+            生成後はNotionへワンクリックで保存。
           </p>
-          <div className={styles.headerPills}>
-            <span className={styles.pill}>OpenAI GPT-4o</span>
-            <span className={styles.pill}>Google Sheets</span>
-            <span className={styles.pill}>Slack</span>
-            <span className={styles.pill}>Gmail</span>
-          </div>
         </header>
 
-        {/* Form */}
         <section className={styles.card}>
           <div className={styles.cardLabel}>STEP 01 — 入力</div>
 
@@ -109,10 +136,39 @@ export default function Home() {
             <input
               className={styles.input}
               type="text"
-              placeholder="例: 生成AIを活用した業務効率化のコツ"
+              placeholder="例: 週末の夜に自分を癒す時間について"
               value={theme}
               onChange={e => setTheme(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && generate()}
+            />
+          </div>
+
+          <div className={styles.formRow}>
+            <div className={styles.formGroup}>
+              <label className={styles.label}>商品名</label>
+              <input
+                className={styles.input}
+                type="text"
+                placeholder="例: 癒やしのアロマキャンドル"
+                value={productName}
+                onChange={e => setProductName(e.target.value)}
+              />
+            </div>
+            <div className={styles.formGroup}>
+              <label className={styles.label}>投稿時間帯</label>
+              <select className={styles.select} value={timeSlot} onChange={e => setTimeSlot(e.target.value)}>
+                {TIMESLOTS.map(t => <option key={t}>{t}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div className={styles.formGroup}>
+            <label className={styles.label}>商品URL</label>
+            <input
+              className={styles.input}
+              type="url"
+              placeholder="https://example.com/item"
+              value={productUrl}
+              onChange={e => setProductUrl(e.target.value)}
             />
           </div>
 
@@ -128,21 +184,6 @@ export default function Home() {
               <select className={styles.select} value={tone} onChange={e => setTone(e.target.value)}>
                 {TONES.map(t => <option key={t}>{t}</option>)}
               </select>
-            </div>
-          </div>
-
-          <div className={styles.formRow}>
-            <div className={styles.formGroup}>
-              <label className={styles.label}>文字数上限: <strong>{charLimit}文字</strong></label>
-              <input type="range" className={styles.range} min={80} max={500} step={10}
-                value={charLimit} onChange={e => setCharLimit(Number(e.target.value))} />
-              <div className={styles.rangeLabels}><span>80</span><span>500</span></div>
-            </div>
-            <div className={styles.formGroup}>
-              <label className={styles.label}>ハッシュタグ数: <strong>{hashtagCount}個</strong></label>
-              <input type="range" className={styles.range} min={1} max={8} step={1}
-                value={hashtagCount} onChange={e => setHashtagCount(Number(e.target.value))} />
-              <div className={styles.rangeLabels}><span>1</span><span>8</span></div>
             </div>
           </div>
 
@@ -167,7 +208,6 @@ export default function Home() {
           </button>
         </section>
 
-        {/* Result */}
         {result && (
           <section className={`${styles.card} ${styles.resultCard}`}>
             <div className={styles.cardLabel}>STEP 02 — 結果</div>
@@ -175,7 +215,6 @@ export default function Home() {
             <div className={styles.resultMeta}>
               <span className={styles.metaBadge}>{result.meta.platform}</span>
               <span className={styles.metaBadge}>{result.meta.tone}</span>
-              <span className={styles.metaBadge}>{result.meta.charCount}文字</span>
               <span className={styles.metaTime}>{result.meta.generatedAt}</span>
             </div>
 
@@ -189,44 +228,38 @@ export default function Home() {
             </div>
 
             {result.tips && (
-              <div className={styles.tipsBox}>
-                <span className={styles.tipsIcon}>💡</span>
-                <span>{result.tips}</span>
+              <div className={styles.postBox} style={{ border: 'none', background: 'rgba(255,255,255,0.03)', marginTop: '10px' }}>
+                <p style={{ fontSize: '13px', color: 'var(--text-muted)', whiteSpace: 'pre-wrap' }}>{result.tips}</p>
               </div>
             )}
 
-            <button className={styles.copyBtn} onClick={copyToClipboard}>
+            <button className={styles.copyBtn} onClick={copyToClipboard} style={{ marginTop: '20px' }}>
               {copied ? '✓ コピーしました！' : '全文をコピー'}
             </button>
 
-            {/* Notification Status */}
-            <div className={styles.notifGrid}>
-              <StatusCard label="Google Sheets" icon="📊" status={result.notifications.sheet} />
-              <StatusCard label="Slack" icon="💬" status={result.notifications.slack} />
-              <StatusCard label="Gmail" icon="📧" status={result.notifications.gmail} />
-            </div>
+            <button
+              className={styles.btn}
+              style={{ background: notionSaved ? '#43e97b' : '#333', marginTop: '10px' }}
+              onClick={saveToNotion}
+              disabled={notionSaving || notionSaved}
+            >
+              <span className={styles.btnInner}>
+                {notionSaving ? (
+                  <><span className={styles.spinner} /> 保存中...</>
+                ) : notionSaved ? (
+                  '✓ Notionに保存済み'
+                ) : (
+                  '📄 Notionに保存する'
+                )}
+              </span>
+            </button>
           </section>
         )}
 
-        {/* Footer */}
         <footer className={styles.footer}>
-          <p>Built with Next.js · OpenAI · Google Sheets · Slack · Gmail · Deployed on Vercel</p>
+          <p>Sayaka Angel Auto Post System · Minimal Edition</p>
         </footer>
       </div>
     </main>
-  )
-}
-
-function StatusCard({ label, icon, status }: {
-  label: string
-  icon: string
-  status: { sent: boolean; error: string }
-}) {
-  return (
-    <div className={`${styles.notifCard} ${status.sent ? styles.notifOk : styles.notifErr}`}>
-      <span className={styles.notifIcon}>{icon}</span>
-      <span className={styles.notifLabel}>{label}</span>
-      <span className={styles.notifStatus}>{status.sent ? '✓ 完了' : '✗ 未設定'}</span>
-    </div>
   )
 }

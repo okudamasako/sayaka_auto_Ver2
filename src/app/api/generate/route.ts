@@ -1,31 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
-import { appendToSheet } from '@/lib/sheets'
-import { sendSlackNotification } from '@/lib/slack'
-import { sendGmailNotification } from '@/lib/gmail'
 
 export async function POST(req: NextRequest) {
   try {
-    console.log('API Request received')
     const body = await req.json()
-    console.log('API Request Body:', body)
     const { theme, platform, tone, charLimit, hashtags } = body
 
     if (!theme || !platform) {
       return NextResponse.json({ error: 'テーマとプラットフォームは必須です' }, { status: 400 })
     }
 
-    // ── OpenAI 初期化 ──────────────────
     const apiKey = process.env.OPENAI_API_KEY
-    console.log(apiKey ? "OPENAI_API_KEY: Present" : "OPENAI_API_KEY: Missing")
-    
-    const openai = new OpenAI({
-      apiKey: apiKey,
-    })
+    if (!apiKey) {
+      return NextResponse.json({ error: 'OpenAI APIキーが設定されていません' }, { status: 500 })
+    }
 
-    // ── 1. OpenAI で投稿文生成 ──────────────────────────────────
+    const openai = new OpenAI({ apiKey })
+
     const modelName = process.env.OPENAI_MODEL || 'gpt-4o-mini'
-    console.log('Starting OpenAI generation with model:', modelName)
     
     const systemPrompt = `あなたはSNS運用アシスタント「Sayaka Angel」です。
 30代女性をターゲットに、やさしく寄り添い、否定しない共感のトーンで投稿文を生成します。
@@ -44,7 +36,7 @@ hashtagsは日本語で必ず5個出力してください。
 テーマ: ${theme}
 文体: ${tone || 'カジュアル'}
 文字数上限: ${charLimit || 140}文字以内
-ハッシュタグ数: ${hashtags || 3}個
+ハッシュタグ数: ${hashtags || 5}個
 `
 
     const completion = await openai.chat.completions.create({
@@ -67,46 +59,6 @@ hashtagsは日本語で必ず5個出力してください。
 
     const now = new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
 
-    // ── 2. Google Sheets に保存 ────────────────────────────────
-    let sheetSaved = false
-    let sheetError = ''
-    try {
-      await appendToSheet({
-        date: now,
-        theme,
-        platform,
-        tone: tone || 'カジュアル',
-        post: fullText,
-        status: '未確認',
-      })
-      sheetSaved = true
-    } catch (e: unknown) {
-      sheetError = e instanceof Error ? e.message : '不明なエラー'
-      console.error('Sheets error:', sheetError)
-    }
-
-    // ── 3. Slack 通知 ──────────────────────────────────────────
-    let slackSent = false
-    let slackError = ''
-    try {
-      await sendSlackNotification({ theme, platform, fullText, now, tips })
-      slackSent = true
-    } catch (e: unknown) {
-      slackError = e instanceof Error ? e.message : '不明なエラー'
-      console.error('Slack error:', slackError)
-    }
-
-    // ── 4. Gmail 通知 ──────────────────────────────────────────
-    let gmailSent = false
-    let gmailError = ''
-    try {
-      await sendGmailNotification({ theme, platform, fullText, now, tips })
-      gmailSent = true
-    } catch (e: unknown) {
-      gmailError = e instanceof Error ? e.message : '不明なエラー'
-      console.error('Gmail error:', gmailError)
-    }
-
     return NextResponse.json({
       success: true,
       post: generatedPost,
@@ -119,24 +71,11 @@ hashtagsは日本語で必ず5個出力してください。
         tone: tone || 'カジュアル',
         generatedAt: now,
         charCount: fullText.length,
-      },
-      notifications: {
-        sheet: { sent: sheetSaved, error: sheetError },
-        slack: { sent: slackSent, error: slackError },
-        gmail: { sent: gmailSent, error: gmailError },
-      },
+      }
     })
   } catch (error: any) {
     console.error('Generate API error details:', error)
     const message = error?.message || '不明なエラー'
-    const name = error?.name || 'Error'
-    const stack = error?.stack || ''
-    console.error('Full Error Message:', message)
-    console.error('Full Error Stack:', stack)
-
-    return NextResponse.json({ 
-      error: `生成に失敗しました: ${message} (${name})`,
-      debug: { message, name, stack }
-    }, { status: 500 })
+    return NextResponse.json({ error: `生成に失敗しました: ${message}` }, { status: 500 })
   }
 }
