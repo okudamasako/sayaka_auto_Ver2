@@ -318,6 +318,12 @@
   color: #7ddfaa;
   margin-bottom: 16px;
 }
+.tipsText {
+  font-size: 16px;
+  line-height: 1.75;
+  color: var(--text);
+  white-space: pre-wrap;
+}
 .tipsIcon { flex-shrink: 0; }
 
 /* ── Copy Button ───────────────────────────────── */

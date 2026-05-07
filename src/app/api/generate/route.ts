@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
+import { fetchRecentPosts } from '@/lib/notion'
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { theme, platform, tone, charLimit, hashtags } = body
+    const { 
+      theme, 
+      platform, 
+      tone, 
+      productName, 
+      productFeatures, 
+      productUrl, 
+      timeSlot 
+    } = body
 
     if (!theme || !platform) {
       return NextResponse.json({ error: 'テーマとプラットフォームは必須です' }, { status: 400 })
@@ -15,28 +24,86 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'OpenAI APIキーが設定されていません' }, { status: 500 })
     }
 
-    const openai = new OpenAI({ apiKey })
+    // Notionから過去の投稿を取得
+    const recentPosts = await fetchRecentPosts(30)
+    const pastContext = recentPosts.length > 0 
+      ? recentPosts.map((p: any) => `- テーマ: ${p.theme}\n  1行目: ${p.usedHook}\n  締め文: ${p.usedClosing}\n  タグ: ${p.hashtags}`).join('\n')
+      : '過去の投稿データはありません。'
 
+    const openai = new OpenAI({ apiKey })
     const modelName = process.env.OPENAI_MODEL || 'gpt-4o-mini'
     
     const systemPrompt = `あなたはSNS運用アシスタント「Sayaka Angel」です。
-30代女性をターゲットに、やさしく寄り添い、否定しない共感のトーンで投稿文を生成します。
-売り込み感や不安を煽る表現は避け、温かい言葉選びを心がけてください。
-hashtagsは日本語で必ず5個出力してください。
+30代の大人女性をターゲットに、やさしく寄り添い、否定しない共感のトーンで投稿文を生成します。
 
-出力は必ず以下のJSON形式で行ってください（マークダウン不要）:
+【Sayaka Angelの基本トーン：静かな余白感】
+- 「おすすめ」「試してみて」「〜してみてね」という直接的な提案や説明は厳禁。
+- 幼い話し方（「〜なんだ」「〜だよ」）やAI的な定型文、売り込み感も徹底的に排除します。
+- 機能の説明ではなく、感覚描写（肌に触れる質感、光の色、空の温度、香り、小さな音）を増やしてください。
+- 文章は短く区切り、改行によってたっぷりと「余白」を作ります。
+- 読んだ人がふと立ち止まり、深く呼吸したくなるような、静かで温度感のある言葉を紡いでください。
+
+【投稿時間帯別の空気感】
+- **7時（朝の光）**: 今日を始める前の、まだ静かな空気。背中を強く押すのではなく、隣で一緒に深呼吸するような寄り添い。
+- **12時（呼吸）**: 喧騒のなかで自分を取り戻す一瞬。外の光や、喉を通る水の冷たさ、ふと見上げた空。
+- **18時（ゆるめる）**: 緊張がほどける時間。商品を「暮らしの中にそっと置く」ように、自分を労わる道具として紹介します。
+- **21時（眠りと回復）**: 「安心して眠れそう」な静かな読後感を最重視。「今日はここまででいい」と心から思える温かい安らぎ。
+
+【マンネリ防止・過去投稿との重複回避】
+過去の投稿データを参照し、以下のルールを厳守してください：
+- **過去と同じ1行目（フック）を絶対に使わない。**
+- **過去と同じ締め文を使わない。**
+- **過去と同じハッシュタグ構成にしない。**
+- ただし、文体・温度感・余白感は過去の良かった投稿を参考に維持してください。
+
+【1行目フックルール：静かな共感】
+Threadsでは1行目でスクロールを止めることを最優先しますが、煽り・断言・マーケティング感ではなく「静かな共感」で止めます。
+- 優先事項：情景、違和感、小さな気づき、感覚描写、静かな共感。
+- 避ける表現：今すぐ、9割が知らない、人生変わる、有料級、警告、断言します、絶対、最強。
+
+【本文構成ルール（厳守）】
+1. 1行目フック（上記の「静かな共感」ルールを適用。読んだ瞬間に「あ、なんかわかる」と思える1行目にする。）
+2. その時間帯の空気感・感覚描写
+3. 「じつは、〜」で始まる、気づきや解決のきっかけ
+4. 商品を暮らしの中にそっと添える（18時以外は商品に触れなくても可）
+5. やさしく、静かに締める。
+6. 商品URLを単独行で配置する。
+
+【出力形式（JSON）】
+必ず以下のJSON形式で出力してください。
+
 {
-  "post": "Threads用投稿文。180〜220文字程度。共感から始まり、必ず1回「じつは〜」という表現を自然に含めてください。",
+  "threadsPost": "Threads用の投稿本文（200文字前後）。構成遵守。URLは最後に単独行。",
+  "instagramPost": "Instagram用の投稿本文。Threadsをベースに改行と余白をさらに増やしたもの。",
+  "reelText": "リール用テキスト（10文字以内×4行。改行区切り）。",
+  "bgm": "CapCut検索用BGM候補5つ（カンマ区切り）。",
+  "imagePrompt": "画像生成用プロンプト（英語）。人物なし、静かな情景。",
   "hashtags": ["タグ1", "タグ2", "タグ3", "タグ4", "タグ5"],
-  "tips": "【Instagram本文】\n（Threadsより丁寧な表現）\n\n【リール文】\n（10文字以内×4行）\n\n【BGM】\n（英語キーワード5つ、ボーカルなし）\n\n【画像生成プロンプト】\n（英語、2:3 vertical, photo realisticなどを含む詳細な指示）"
-}`
+  "usedHook": "今回使用した1行目フック（重複チェック用）",
+  "usedClosing": "今回使用した締め文（重複チェック用）"
+}
+
+【制約事項】
+- 商品URLは必ず文章の最後に独立した行として配置する。
+- 文体は終始、静かで落ち着いたトーンを維持する。
+- 「じつは、〜」という気づきを必ず含める。
+- 「おすすめ」「試してみて」という言葉は絶対に使わない。`
 
     const userPrompt = `
+以下の条件で、大人女性に寄り添う投稿文を生成してください。
+
 プラットフォーム: ${platform}
+投稿時間帯: ${timeSlot}
 テーマ: ${theme}
-文体: ${tone || 'カジュアル'}
-文字数上限: ${charLimit || 140}文字以内
-ハッシュタグ数: ${hashtags || 5}個
+商品名: ${productName || 'なし'}
+商品特徴: ${productFeatures || 'なし'}
+商品URL: ${productUrl || ''}
+文体: ${tone || 'Sayaka Angel (やさしい)'}
+
+【過去の投稿データ（これらと重複させないでください）】
+${pastContext}
+
+※18時投稿の場合は、商品を「自分を整える小さな道具」として自然に紹介してください。
 `
 
     const completion = await openai.chat.completions.create({
@@ -52,19 +119,29 @@ hashtagsは日本語で必ず5個出力してください。
     const raw = completion.choices[0].message.content || '{}'
     const result = JSON.parse(raw)
 
-    const generatedPost: string = result.post || ''
-    const generatedHashtags: string[] = result.hashtags || []
-    const tips: string = result.tips || ''
-    const fullText = `${generatedPost}\n\n${generatedHashtags.map((h: string) => `#${h.replace(/^#/, '')}`).join(' ')}`
+    // 簡易的な類似チェック（1行目の重複チェック）
+    const isDuplicate = recentPosts.some((p: any) => p.usedHook === result.usedHook)
+    
+    // 生成されたタグを整形
+    const formattedHashtags = result.hashtags.map((h: string) => `#${h.replace(/^#/, '')}`).join(' ')
+    const fullText = `${result.threadsPost}\n\n${formattedHashtags}`
 
     const now = new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })
 
     return NextResponse.json({
       success: true,
-      post: generatedPost,
-      hashtags: generatedHashtags,
+      isDuplicate,
+      post: result.threadsPost,
+      instagramPost: result.instagramPost,
+      reelText: result.reelText,
+      bgm: result.bgm,
+      imagePrompt: result.imagePrompt,
+      hashtags: result.hashtags,
+      usedHook: result.usedHook,
+      usedClosing: result.usedClosing,
       fullText,
-      tips,
+      // 旧フロントエンド互換性のためのtipsフィールド
+      tips: `【Instagram本文】\n${result.instagramPost}\n\n【リール文】\n${result.reelText}\n\n【BGM候補】\n${result.bgm}\n\n【画像生成プロンプト】\n${result.imagePrompt}\n\n【Instagramハッシュタグ】\n${result.hashtags.join(' ')}`,
       meta: {
         theme,
         platform,

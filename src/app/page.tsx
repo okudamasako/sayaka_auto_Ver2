@@ -8,8 +8,16 @@ const TONES = ['Sayaka Angel (やさしい)', 'カジュアル', 'ビジネス']
 const TIMESLOTS = ['7時', '12時', '18時', '21時']
 
 interface Result {
+  success: boolean
+  isDuplicate: boolean
   post: string
+  instagramPost: string
+  reelText: string
+  bgm: string
+  imagePrompt: string
   hashtags: string[]
+  usedHook: string
+  usedClosing: string
   fullText: string
   tips: string
   meta: {
@@ -29,8 +37,10 @@ export default function Home() {
   
   // 新規入力（Notion用）
   const [productName, setProductName] = useState('')
+  const [productFeatures, setProductFeatures] = useState('') 
   const [productUrl, setProductUrl] = useState('')
   const [timeSlot, setTimeSlot] = useState('18時')
+  const [evaluation, setEvaluation] = useState('')
 
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<Result | null>(null)
@@ -47,12 +57,21 @@ export default function Home() {
     setError('')
     setResult(null)
     setNotionSaved(false)
+    setEvaluation('')
 
     try {
       const res = await fetch('/api/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ theme, platform, tone }),
+        body: JSON.stringify({ 
+          theme, 
+          platform, 
+          tone,
+          productName,
+          productFeatures,
+          productUrl,
+          timeSlot
+        }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -80,12 +99,18 @@ export default function Home() {
         body: JSON.stringify({
           theme: theme,
           threadsPost: result.post,
+          instagramPost: result.instagramPost,
+          reelText: result.reelText,
+          bgm: result.bgm,
+          imagePrompt: result.imagePrompt,
           hashtags: result.hashtags.join(' '),
-          reelText: result.tips, // 現在の構成ではtipsにリール文等が含まれている
-          bgm: '', // プロンプトから抽出が必要だが、一旦シンプルに保持
           productName,
+          productFeatures,
           productUrl,
-          timeSlot
+          timeSlot,
+          evaluation,
+          usedHook: result.usedHook,
+          usedClosing: result.usedClosing
         }),
       })
       const data = await res.json()
@@ -124,7 +149,7 @@ export default function Home() {
           </h1>
           <p className={styles.subtitle}>
             30代女性に寄り添うSNS投稿文を生成。<br />
-            生成後はNotionへワンクリックで保存。
+            過去の投稿を参照し、重複のない新鮮な言葉を紡ぎます。
           </p>
         </header>
 
@@ -136,7 +161,7 @@ export default function Home() {
             <input
               className={styles.input}
               type="text"
-              placeholder="例: 週末の夜に自分を癒す時間について"
+              placeholder="例: GW明けの木曜日"
               value={theme}
               onChange={e => setTheme(e.target.value)}
             />
@@ -148,7 +173,7 @@ export default function Home() {
               <input
                 className={styles.input}
                 type="text"
-                placeholder="例: 癒やしのアロマキャンドル"
+                placeholder="例: シリコン磁気ネックレス"
                 value={productName}
                 onChange={e => setProductName(e.target.value)}
               />
@@ -162,11 +187,22 @@ export default function Home() {
           </div>
 
           <div className={styles.formGroup}>
+            <label className={styles.label}>商品特徴</label>
+            <textarea
+              className={styles.input}
+              style={{ minHeight: '80px', paddingTop: '10px' }}
+              placeholder="例: 首や肩まわりをやさしく整えて、夕方の重さを少し軽くしてくれる"
+              value={productFeatures}
+              onChange={e => setProductFeatures(e.target.value)}
+            />
+          </div>
+
+          <div className={styles.formGroup}>
             <label className={styles.label}>商品URL</label>
             <input
               className={styles.input}
               type="url"
-              placeholder="https://example.com/item"
+              placeholder="https://a.r10.to/hYHSgz"
               value={productUrl}
               onChange={e => setProductUrl(e.target.value)}
             />
@@ -197,7 +233,7 @@ export default function Home() {
             {loading ? (
               <span className={styles.btnInner}>
                 <span className={styles.spinner} />
-                生成中...
+                過去投稿を参照して生成中...
               </span>
             ) : (
               <span className={styles.btnInner}>
@@ -212,6 +248,12 @@ export default function Home() {
           <section className={`${styles.card} ${styles.resultCard}`}>
             <div className={styles.cardLabel}>STEP 02 — 結果</div>
 
+            {result.isDuplicate && (
+              <div className={styles.error} style={{ background: 'rgba(255, 100, 100, 0.1)', border: '1px solid #ff6b6b', marginBottom: '20px', padding: '15px' }}>
+                ⚠️ <strong>注意:</strong> このフック（1行目）は過去の投稿で使用されている可能性があります。
+              </div>
+            )}
+
             <div className={styles.resultMeta}>
               <span className={styles.metaBadge}>{result.meta.platform}</span>
               <span className={styles.metaBadge}>{result.meta.tone}</span>
@@ -219,6 +261,7 @@ export default function Home() {
             </div>
 
             <div className={styles.postBox}>
+              <h3 style={{ fontSize: '0.9rem', color: '#888', marginBottom: '10px' }}>Threads投稿文</h3>
               <p className={styles.postText}>{result.post}</p>
               <p className={styles.postHashtags}>
                 {result.hashtags.map((h, i) => (
@@ -227,37 +270,49 @@ export default function Home() {
               </p>
             </div>
 
-            {result.tips && (
-              <div className={styles.postBox} style={{ border: 'none', background: 'rgba(255,255,255,0.03)', marginTop: '10px' }}>
-                <p style={{ fontSize: '13px', color: 'var(--text-muted)', whiteSpace: 'pre-wrap' }}>{result.tips}</p>
-              </div>
-            )}
+            <div className={styles.postBox} style={{ border: 'none', background: 'rgba(255,255,255,0.03)', marginTop: '10px' }}>
+              <h3 style={{ fontSize: '0.9rem', color: '#888', marginBottom: '10px' }}>Instagram/リール用詳細</h3>
+              <p className={styles.tipsText}>{result.tips}</p>
+            </div>
 
-            <button className={styles.copyBtn} onClick={copyToClipboard} style={{ marginTop: '20px' }}>
-              {copied ? '✓ コピーしました！' : '全文をコピー'}
-            </button>
+            <div className={styles.formGroup} style={{ marginTop: '20px' }}>
+              <label className={styles.label}>評価メモ (Notion保存用)</label>
+              <textarea
+                className={styles.input}
+                style={{ minHeight: '60px', background: 'rgba(255,255,255,0.05)', fontSize: '0.9rem' }}
+                placeholder="例: この表現は反応が良さそう、もう少し余白を増やすべきだった等"
+                value={evaluation}
+                onChange={e => setEvaluation(e.target.value)}
+              />
+            </div>
 
-            <button
-              className={styles.btn}
-              style={{ background: notionSaved ? '#43e97b' : '#333', marginTop: '10px' }}
-              onClick={saveToNotion}
-              disabled={notionSaving || notionSaved}
-            >
-              <span className={styles.btnInner}>
-                {notionSaving ? (
-                  <><span className={styles.spinner} /> 保存中...</>
-                ) : notionSaved ? (
-                  '✓ Notionに保存済み'
-                ) : (
-                  '📄 Notionに保存する'
-                )}
-              </span>
-            </button>
+            <div className={styles.formRow} style={{ marginTop: '20px' }}>
+              <button className={styles.copyBtn} onClick={copyToClipboard} style={{ flex: 1 }}>
+                {copied ? '✓ コピーしました！' : '全文をコピー'}
+              </button>
+              
+              <button
+                className={styles.btn}
+                style={{ background: notionSaved ? '#43e97b' : '#333', flex: 2 }}
+                onClick={saveToNotion}
+                disabled={notionSaving || notionSaved}
+              >
+                <span className={styles.btnInner}>
+                  {notionSaving ? (
+                    <><span className={styles.spinner} /> 保存中...</>
+                  ) : notionSaved ? (
+                    '✓ Notionに保存済み'
+                  ) : (
+                    '📄 Notionに保存する'
+                  )}
+                </span>
+              </button>
+            </div>
           </section>
         )}
 
         <footer className={styles.footer}>
-          <p>Sayaka Angel Auto Post System · Minimal Edition</p>
+          <p>Sayaka Angel Auto Post System · Notion Connect Edition</p>
         </footer>
       </div>
     </main>

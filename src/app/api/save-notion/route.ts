@@ -7,12 +7,18 @@ export async function POST(req: NextRequest) {
     const { 
       theme, 
       threadsPost, 
-      hashtags, 
+      instagramPost,
       reelText, 
       bgm, 
+      imagePrompt,
+      hashtags, 
       productName, 
+      productFeatures,
       productUrl, 
-      timeSlot 
+      timeSlot,
+      evaluation,
+      usedHook,
+      usedClosing
     } = body
 
     if (!theme || !threadsPost) {
@@ -22,12 +28,18 @@ export async function POST(req: NextRequest) {
     await saveToNotion({
       theme,
       threadsPost,
-      hashtags,
-      reelText,
-      bgm,
+      instagramPost: instagramPost || '',
+      reelText: reelText || '',
+      bgm: bgm || '',
+      imagePrompt: imagePrompt || '',
+      hashtags: hashtags || '',
       productName,
+      productFeatures,
       productUrl,
-      timeSlot
+      timeSlot,
+      evaluation: evaluation || '',
+      usedHook: usedHook || '',
+      usedClosing: usedClosing || ''
     })
 
     return NextResponse.json({ success: true, message: 'Notionに保存しました' })
